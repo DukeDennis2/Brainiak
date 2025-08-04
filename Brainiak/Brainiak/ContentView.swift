@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UIKit
 
 struct Game: Identifiable {
     let id = UUID()
@@ -148,7 +147,7 @@ struct SudokuGameView: View {
                     }
                 }
             }
-            .background(Color(.systemGray5))
+            .background(Color.gray.opacity(0.2))
             .cornerRadius(12)
             .padding(.vertical, 12)
             Spacer(minLength: 8)
@@ -342,7 +341,7 @@ struct Game2048View: View {
             .padding(.bottom, 8)
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemGray5))
+                    .fill(Color.gray.opacity(0.2))
                 VStack(spacing: 8) {
                     ForEach(0..<4, id: \ .self) { r in
                         HStack(spacing: 8) {
@@ -391,7 +390,7 @@ struct Game2048View: View {
     
     func tileColor(_ value: Int) -> Color {
         switch value {
-        case 0: return Color(.systemGray4)
+        case 0: return Color.gray.opacity(0.3)
         case 2: return Color(red: 0.93, green: 0.89, blue: 0.85)
         case 4: return Color(red: 0.93, green: 0.87, blue: 0.78)
         case 8: return Color(red: 0.95, green: 0.69, blue: 0.47)
@@ -410,8 +409,76 @@ struct Game2048View: View {
 
 struct KakuroGameView: View {
     let onExit: () -> Void
+    // 0 = black cell, nil = input cell, (across, down) = clue cell
+    typealias KakuroCell = (across: Int?, down: Int?)?
+    let grid: [[KakuroCell]] = [
+        [nil, (nil, nil), (nil, 16), (nil, 24), nil],
+        [(23, nil), nil, nil, nil, (17, nil)],
+        [(30, nil), nil, nil, nil, (27, nil)],
+        [nil, (12, nil), nil, nil, nil],
+        [nil, nil, (nil, nil), (nil, nil), nil]
+    ]
+    @State private var values: [[Int?]] = Array(repeating: Array(repeating: nil, count: 5), count: 5)
+    @State private var selected: SelectedCell? = nil
+    @State private var showResult: Bool = false
+    @State private var isCorrect: Bool = false
+    
+    func isInputCell(row: Int, col: Int) -> Bool {
+        grid[row][col] == nil
+    }
+    func isClueCell(row: Int, col: Int) -> Bool {
+        grid[row][col] != nil && (grid[row][col]?.across != nil || grid[row][col]?.down != nil)
+    }
+    func clueText(_ cell: KakuroCell) -> String {
+        var text = ""
+        if let across = cell?.across { text += "→\(across) " }
+        if let down = cell?.down { text += "↓\(down)" }
+        return text.trimmingCharacters(in: .whitespaces)
+    }
+    func checkSolution() -> Bool {
+        // Check across clues
+        for row in 0..<5 {
+            var col = 0
+            while col < 5 {
+                if let clue = grid[row][col], let across = clue.across {
+                    var sum = 0
+                    var nums: [Int] = []
+                    var c = col + 1
+                    while c < 5 && isInputCell(row: row, col: c) {
+                        if let v = values[row][c] { sum += v; nums.append(v) } else { return false }
+                        c += 1
+                    }
+                    if sum != across || Set(nums).count != nums.count { return false }
+                }
+                col += 1
+            }
+        }
+        // Check down clues
+        for col in 0..<5 {
+            var row = 0
+            while row < 5 {
+                if let clue = grid[row][col], let down = clue.down {
+                    var sum = 0
+                    var nums: [Int] = []
+                    var r = row + 1
+                    while r < 5 && isInputCell(row: r, col: col) {
+                        if let v = values[r][col] { sum += v; nums.append(v) } else { return false }
+                        r += 1
+                    }
+                    if sum != down || Set(nums).count != nums.count { return false }
+                }
+                row += 1
+            }
+        }
+        return true
+    }
+    func clearBoard() {
+        values = Array(repeating: Array(repeating: nil, count: 5), count: 5)
+        selected = nil
+        showResult = false
+    }
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -421,63 +488,239 @@ struct KakuroGameView: View {
                         .padding()
                 }
             }
+            Text("Kakuro")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Fill the white cells so each group adds up to the clue. No repeats in a group.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            VStack(spacing: 2) {
+                ForEach(0..<5, id: \ .self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<5, id: \ .self) { col in
+                            ZStack {
+                                if isInputCell(row: row, col: col) {
+                                    Rectangle()
+                                        .fill(selected?.row == row && selected?.col == col ? Color.accentColor.opacity(0.2) : Color.white)
+                                        .border(Color.accentColor, width: 1)
+                                    Text(values[row][col] != nil ? "\(values[row][col]!)" : "")
+                                        .font(.title2)
+                                        .foregroundColor(.primary)
+                                } else if isClueCell(row: row, col: col) {
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.2))
+                                        .border(Color.accentColor, width: 1)
+                                    Text(clueText(grid[row][col]))
+                                        .font(.caption2)
+                                        .foregroundColor(.accentColor)
+                                        .multilineTextAlignment(.center)
+                                        .padding(2)
+                                } else {
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .border(Color.gray.opacity(0.3), width: 1)
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .onTapGesture {
+                                if isInputCell(row: row, col: col) {
+                                    selected = SelectedCell(row: row, col: col)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .cornerRadius(10)
+            .padding(.vertical, 12)
+            Spacer(minLength: 8)
+            if let sel = selected, isInputCell(row: sel.row, col: sel.col) {
+                HStack(spacing: 8) {
+                    ForEach(1...9, id: \ .self) { num in
+                        Button(action: {
+                            values[sel.row][sel.col] = num
+                        }) {
+                            Text("\(num)")
+                                .font(.title3.bold())
+                                .frame(width: 36, height: 36)
+                                .background(Color.accentColor.opacity(0.15))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(8)
+                        }
+                    }
+                    Button(action: { values[sel.row][sel.col] = nil }) {
+                        Image(systemName: "delete.left")
+                            .font(.title3)
+                            .frame(width: 36, height: 36)
+                            .background(Color.gray.opacity(0.2))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            HStack(spacing: 16) {
+                Button(action: {
+                    isCorrect = checkSolution()
+                    showResult = true
+                }) {
+                    Text("Check")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(10)
+                }
+                Button(action: clearBoard) {
+                    Text("New Puzzle")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                }
+            }
+            .padding(.top, 8)
+            if showResult {
+                Text(isCorrect ? "Correct!" : "Not solved yet.")
+                    .foregroundColor(isCorrect ? .green : .red)
+                    .font(.headline)
+                    .padding(.top, 4)
+            }
             Spacer()
-            Text("Kakuro Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+        }
+        .padding()
+        .onAppear {
+            clearBoard()
         }
     }
 }
 
 struct KenKenGameView: View {
     let onExit: () -> Void
-    var body: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button(action: onExit) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundColor(.secondary)
-                        .padding()
-                }
+    // Cage structure: (cells: [(row, col)], operation: String, target: Int)
+    typealias Cage = (cells: [(Int, Int)], operation: String, target: Int)
+    @State private var cages: [Cage] = []
+    @State private var board: [[Int?]] = Array(repeating: Array(repeating: nil, count: 4), count: 4)
+    @State private var selected: SelectedCell? = nil
+    @State private var showResult: Bool = false
+    @State private var isCorrect: Bool = false
+    
+    func generateRandomPuzzle() -> [Cage] {
+        var newCages: [Cage] = []
+        var usedCells: Set<CellCoordinate> = []
+        
+        // Generate random cage configurations
+        let cageConfigs = [
+            [(0, 0), (0, 1)], [(0, 2)], [(0, 3)],
+            [(1, 0)], [(1, 1), (1, 2)], [(1, 3)],
+            [(2, 0), (3, 0)], [(2, 1), (2, 2), (2, 3)], [(3, 1)], [(3, 2), (3, 3)]
+        ].shuffled()
+        
+        for config in cageConfigs {
+            // Check if any cell in this config is already used
+            let configSet = Set(config.map { CellCoordinate(row: $0.0, col: $0.1) })
+            if configSet.isDisjoint(with: usedCells) {
+                let operation = ["+", "×", "−", "÷"].randomElement() ?? "+"
+                let target = generateTarget(for: config, operation: operation)
+                newCages.append((cells: config, operation: operation, target: target))
+                usedCells.formUnion(configSet)
             }
-            Spacer()
-            Text("KenKen Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+        }
+        
+        return newCages
+    }
+    
+    func generateTarget(for cells: [(Int, Int)], operation: String) -> Int {
+        switch operation {
+        case "+":
+            return Int.random(in: 3...10)
+        case "×":
+            return Int.random(in: 2...12)
+        case "−":
+            return Int.random(in: 1...3)
+        case "÷":
+            return Int.random(in: 2...4)
+        default:
+            return Int.random(in: 1...4)
         }
     }
-}
-
-struct NonogramsGameView: View {
-    let onExit: () -> Void
-    var body: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button(action: onExit) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundColor(.secondary)
-                        .padding()
-                }
-            }
-            Spacer()
-            Text("Nonograms Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+    
+    func getCage(for row: Int, col: Int) -> Cage? {
+        return cages.first { cage in
+            cage.cells.contains { $0.0 == row && $0.1 == col }
         }
     }
-}
-
-struct HitoriGameView: View {
-    let onExit: () -> Void
+    
+    func cageText(for row: Int, col: Int) -> String {
+        guard let cage = getCage(for: row, col: col) else { return "" }
+        // Only show operation and target for the first cell in the cage
+        if cage.cells.first?.0 == row && cage.cells.first?.1 == col {
+            return "\(cage.target)\(cage.operation)"
+        }
+        return ""
+    }
+    
+    func checkSolution() -> Bool {
+        // Check rows and columns for duplicates
+        for row in 0..<4 {
+            var rowNums: [Int] = []
+            var colNums: [Int] = []
+            for col in 0..<4 {
+                if let val = board[row][col] { rowNums.append(val) }
+                if let val = board[col][row] { colNums.append(val) }
+            }
+            if Set(rowNums).count != rowNums.count || Set(colNums).count != colNums.count {
+                return false
+            }
+        }
+        
+        // Check cages
+        for cage in cages {
+            var cageValues: [Int] = []
+            for (row, col) in cage.cells {
+                if let val = board[row][col] {
+                    cageValues.append(val)
+                } else {
+                    return false // Incomplete cage
+                }
+            }
+            
+            if !checkCage(cageValues, operation: cage.operation, target: cage.target) {
+                return false
+            }
+        }
+        return true
+    }
+    
+    func checkCage(_ values: [Int], operation: String, target: Int) -> Bool {
+        switch operation {
+        case "+":
+            return values.reduce(0, +) == target
+        case "×":
+            return values.reduce(1, *) == target
+        case "−":
+            return values.count == 2 && abs(values[0] - values[1]) == target
+        case "÷":
+            return values.count == 2 && (values[0] / values[1] == target || values[1] / values[0] == target)
+        default:
+            return values.count == 1 && values[0] == target
+        }
+    }
+    
+    func clearBoard() {
+        cages = generateRandomPuzzle()
+        board = Array(repeating: Array(repeating: nil, count: 4), count: 4)
+        selected = nil
+        showResult = false
+    }
+    
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -487,19 +730,227 @@ struct HitoriGameView: View {
                         .padding()
                 }
             }
+            Text("KenKen")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Fill each cage so the numbers combine with the operation to reach the target.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            VStack(spacing: 2) {
+                ForEach(0..<4, id: \ .self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<4, id: \ .self) { col in
+                            ZStack {
+                                Rectangle()
+                                    .fill(selected?.row == row && selected?.col == col ? Color.accentColor.opacity(0.2) : Color.white)
+                                    .border(Color.accentColor, width: 1)
+                                VStack(spacing: 2) {
+                                    Text(cageText(for: row, col: col))
+                                        .font(.caption2)
+                                        .foregroundColor(.accentColor)
+                                    Text(board[row][col] != nil ? "\(board[row][col]!)" : "")
+                                        .font(.title2)
+                                        .foregroundColor(.primary)
+                                }
+                            }
+                            .frame(width: 60, height: 60)
+                            .onTapGesture {
+                                selected = SelectedCell(row: row, col: col)
+                            }
+                        }
+                    }
+                }
+            }
+            .cornerRadius(10)
+            .padding(.vertical, 12)
+            Spacer(minLength: 8)
+            if let sel = selected {
+                HStack(spacing: 8) {
+                    ForEach(1...4, id: \ .self) { num in
+                        Button(action: {
+                            board[sel.row][sel.col] = num
+                        }) {
+                            Text("\(num)")
+                                .font(.title3.bold())
+                                .frame(width: 36, height: 36)
+                                .background(Color.accentColor.opacity(0.15))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(8)
+                        }
+                    }
+                    Button(action: { board[sel.row][sel.col] = nil }) {
+                        Image(systemName: "delete.left")
+                            .font(.title3)
+                            .frame(width: 36, height: 36)
+                            .background(Color.gray.opacity(0.2))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            HStack(spacing: 16) {
+                Button(action: {
+                    isCorrect = checkSolution()
+                    showResult = true
+                }) {
+                    Text("Check")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(10)
+                }
+                Button(action: clearBoard) {
+                    Text("New Puzzle")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                }
+            }
+            .padding(.top, 8)
+            if showResult {
+                Text(isCorrect ? "Correct!" : "Not solved yet.")
+                    .foregroundColor(isCorrect ? .green : .red)
+                    .font(.headline)
+                    .padding(.top, 4)
+            }
             Spacer()
-            Text("Hitori Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+        }
+        .padding()
+        .onAppear {
+            clearBoard()
         }
     }
 }
 
 struct CalcudokuGameView: View {
     let onExit: () -> Void
+    // Cage structure: (cells: [(row, col)], operation: String, target: Int)
+    typealias Cage = (cells: [(Int, Int)], operation: String, target: Int)
+    @State private var cages: [Cage] = []
+    @State private var board: [[Int?]] = Array(repeating: Array(repeating: nil, count: 4), count: 4)
+    @State private var selected: SelectedCell? = nil
+    @State private var showResult: Bool = false
+    @State private var isCorrect: Bool = false
+    
+    func generateRandomPuzzle() -> [Cage] {
+        var newCages: [Cage] = []
+        var usedCells: Set<CellCoordinate> = []
+        
+        // Generate random cage configurations
+        let cageConfigs = [
+            [(0, 0), (0, 1)], [(0, 2)], [(0, 3)],
+            [(1, 0)], [(1, 1), (1, 2)], [(1, 3)],
+            [(2, 0), (3, 0)], [(2, 1), (2, 2), (2, 3)], [(3, 1)], [(3, 2), (3, 3)]
+        ].shuffled()
+        
+        for config in cageConfigs {
+            // Check if any cell in this config is already used
+            let configSet = Set(config.map { CellCoordinate(row: $0.0, col: $0.1) })
+            if configSet.isDisjoint(with: usedCells) {
+                let operation = ["+", "×", "−", "÷"].randomElement() ?? "+"
+                let target = generateTarget(for: config, operation: operation)
+                newCages.append((cells: config, operation: operation, target: target))
+                usedCells.formUnion(configSet)
+            }
+        }
+        
+        return newCages
+    }
+    
+    func generateTarget(for cells: [(Int, Int)], operation: String) -> Int {
+        switch operation {
+        case "+":
+            return Int.random(in: 3...10)
+        case "×":
+            return Int.random(in: 2...12)
+        case "−":
+            return Int.random(in: 1...3)
+        case "÷":
+            return Int.random(in: 2...4)
+        default:
+            return Int.random(in: 1...4)
+        }
+    }
+    
+    func getCage(for row: Int, col: Int) -> Cage? {
+        return cages.first { cage in
+            cage.cells.contains { $0.0 == row && $0.1 == col }
+        }
+    }
+    
+    func cageText(for row: Int, col: Int) -> String {
+        guard let cage = getCage(for: row, col: col) else { return "" }
+        // Only show operation and target for the first cell in the cage
+        if cage.cells.first?.0 == row && cage.cells.first?.1 == col {
+            return "\(cage.target)\(cage.operation)"
+        }
+        return ""
+    }
+    
+    func checkSolution() -> Bool {
+        // Check rows and columns for duplicates
+        for row in 0..<4 {
+            var rowNums: [Int] = []
+            var colNums: [Int] = []
+            for col in 0..<4 {
+                if let val = board[row][col] { rowNums.append(val) }
+                if let val = board[col][row] { colNums.append(val) }
+            }
+            if Set(rowNums).count != rowNums.count || Set(colNums).count != colNums.count {
+                return false
+            }
+        }
+        
+        // Check cages
+        for cage in cages {
+            var cageValues: [Int] = []
+            for (row, col) in cage.cells {
+                if let val = board[row][col] {
+                    cageValues.append(val)
+                } else {
+                    return false // Incomplete cage
+                }
+            }
+            
+            if !checkCage(cageValues, operation: cage.operation, target: cage.target) {
+                return false
+            }
+        }
+        return true
+    }
+    
+    func checkCage(_ values: [Int], operation: String, target: Int) -> Bool {
+        switch operation {
+        case "+":
+            return values.reduce(0, +) == target
+        case "×":
+            return values.reduce(1, *) == target
+        case "−":
+            return values.count == 2 && abs(values[0] - values[1]) == target
+        case "÷":
+            return values.count == 2 && (values[0] / values[1] == target || values[1] / values[0] == target)
+        default:
+            return values.count == 1 && values[0] == target
+        }
+    }
+    
+    func clearBoard() {
+        cages = generateRandomPuzzle()
+        board = Array(repeating: Array(repeating: nil, count: 4), count: 4)
+        selected = nil
+        showResult = false
+    }
+    
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -509,11 +960,102 @@ struct CalcudokuGameView: View {
                         .padding()
                 }
             }
+            Text("Calcudoku")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Fill each cage so the numbers combine with the operation to reach the target.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            VStack(spacing: 2) {
+                ForEach(0..<4, id: \.self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<4, id: \.self) { col in
+                            ZStack {
+                                Rectangle()
+                                    .fill(selected?.row == row && selected?.col == col ? Color.accentColor.opacity(0.2) : Color.white)
+                                    .border(Color.accentColor, width: 1)
+                                VStack(spacing: 2) {
+                                    Text(cageText(for: row, col: col))
+                                        .font(.caption2)
+                                        .foregroundColor(.accentColor)
+                                    Text(board[row][col] != nil ? "\(board[row][col]!)" : "")
+                                        .font(.title2)
+                                        .foregroundColor(.primary)
+                                }
+                            }
+                            .frame(width: 60, height: 60)
+                            .onTapGesture {
+                                selected = SelectedCell(row: row, col: col)
+                            }
+                        }
+                    }
+                }
+            }
+            .cornerRadius(10)
+            .padding(.vertical, 12)
+            Spacer(minLength: 8)
+            if let sel = selected {
+                HStack(spacing: 8) {
+                    ForEach(1...4, id: \.self) { num in
+                        Button(action: {
+                            board[sel.row][sel.col] = num
+                        }) {
+                            Text("\(num)")
+                                .font(.title3.bold())
+                                .frame(width: 36, height: 36)
+                                .background(Color.accentColor.opacity(0.15))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(8)
+                        }
+                    }
+                    Button(action: { board[sel.row][sel.col] = nil }) {
+                        Image(systemName: "delete.left")
+                            .font(.title3)
+                            .frame(width: 36, height: 36)
+                            .background(Color.gray.opacity(0.2))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            HStack(spacing: 16) {
+                Button(action: {
+                    isCorrect = checkSolution()
+                    showResult = true
+                }) {
+                    Text("Check")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(10)
+                }
+                Button(action: clearBoard) {
+                    Text("New Puzzle")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                }
+            }
+            .padding(.top, 8)
+            if showResult {
+                Text(isCorrect ? "Correct!" : "Not solved yet.")
+                    .foregroundColor(isCorrect ? .green : .red)
+                    .font(.headline)
+                    .padding(.top, 4)
+            }
             Spacer()
-            Text("Calcudoku Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+        }
+        .padding()
+        .onAppear {
+            clearBoard()
         }
     }
 }
@@ -564,8 +1106,175 @@ struct FutoshikiGameView: View {
 
 struct NumbrixGameView: View {
     let onExit: () -> Void
+    @State private var board: [[Int?]] = Array(repeating: Array(repeating: nil, count: 5), count: 5)
+    @State private var selected: SelectedCell? = nil
+    @State private var showResult: Bool = false
+    @State private var isCorrect: Bool = false
+    
+    func generatePuzzle() -> [[Int?]] {
+        // Generate random puzzle templates
+        let puzzleTemplates: [[[Int?]]] = [
+            // Template 1: Original
+            [
+                [1, 2, 3, 4, 5],
+                [nil, nil, nil, nil, 6],
+                [nil, nil, nil, nil, 7],
+                [nil, nil, nil, nil, 8],
+                [25, 24, 23, 22, 9]
+            ],
+            // Template 2: Spiral pattern
+            [
+                [1, 2, 3, 4, 5],
+                [16, nil, nil, nil, 6],
+                [15, nil, nil, nil, 7],
+                [14, nil, nil, nil, 8],
+                [13, 12, 11, 10, 9]
+            ],
+            // Template 3: Corner pattern
+            [
+                [1, nil, nil, nil, 5],
+                [nil, 2, nil, 4, nil],
+                [nil, nil, 3, nil, nil],
+                [nil, 22, nil, 24, nil],
+                [21, nil, nil, nil, 25]
+            ],
+            // Template 4: Cross pattern
+            [
+                [1, 2, 3, 4, 5],
+                [10, nil, nil, nil, 6],
+                [9, nil, nil, nil, 7],
+                [8, nil, nil, nil, 8],
+                [25, 24, 23, 22, 9]
+            ],
+            // Template 5: Diagonal pattern
+            [
+                [1, nil, nil, nil, 5],
+                [nil, 2, nil, 4, nil],
+                [nil, nil, 3, nil, nil],
+                [nil, 22, nil, 24, nil],
+                [21, nil, nil, nil, 25]
+            ]
+        ]
+        
+        // Randomly select a template
+        let randomTemplate = puzzleTemplates.randomElement() ?? puzzleTemplates[0]
+        
+        // Optionally add some randomization to the template
+        var puzzle = randomTemplate
+        let randomizeChance = 0.3 // 30% chance to randomize some cells
+        
+        for row in 0..<5 {
+            for col in 0..<5 {
+                if puzzle[row][col] != nil && Double.random(in: 0...1) < randomizeChance {
+                    // 50% chance to clear this cell
+                    if Double.random(in: 0...1) < 0.5 {
+                        puzzle[row][col] = nil
+                    }
+                }
+            }
+        }
+        
+        return puzzle
+    }
+    
+    func isValidMove(row: Int, col: Int, value: Int) -> Bool {
+        // Check if the value is within range
+        if value < 1 || value > 25 { return false }
+        
+        // Check if the value is already used
+        for r in 0..<5 {
+            for c in 0..<5 {
+                if board[r][c] == value && (r != row || c != col) {
+                    return false
+                }
+            }
+        }
+        
+        // Check if the value is adjacent to the previous or next number
+        let prevValue = value - 1
+        let nextValue = value + 1
+        
+        var hasAdjacentPrev = false
+        var hasAdjacentNext = false
+        
+        let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+        for (dr, dc) in directions {
+            let nr = row + dr
+            let nc = col + dc
+            if nr >= 0 && nr < 5 && nc >= 0 && nc < 5 {
+                if let cellValue = board[nr][nc] {
+                    if cellValue == prevValue {
+                        hasAdjacentPrev = true
+                    }
+                    if cellValue == nextValue {
+                        hasAdjacentNext = true
+                    }
+                }
+            }
+        }
+        
+        // Must be adjacent to either previous or next number (or both)
+        return hasAdjacentPrev || hasAdjacentNext
+    }
+    
+    func checkSolution() -> Bool {
+        // Check if all cells are filled
+        for row in 0..<5 {
+            for col in 0..<5 {
+                if board[row][col] == nil {
+                    return false
+                }
+            }
+        }
+        
+        // Check if numbers form a connected path from 1 to 25
+        for value in 1..<25 {
+            var found = false
+            var nextFound = false
+            
+            // Find current value
+            var currentRow = 0, currentCol = 0
+            for row in 0..<5 {
+                for col in 0..<5 {
+                    if board[row][col] == value {
+                        currentRow = row
+                        currentCol = col
+                        found = true
+                        break
+                    }
+                }
+                if found { break }
+            }
+            
+            if !found { return false }
+            
+            // Check if next value is adjacent
+            let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+            for (dr, dc) in directions {
+                let nr = currentRow + dr
+                let nc = currentCol + dc
+                if nr >= 0 && nr < 5 && nc >= 0 && nc < 5 {
+                    if board[nr][nc] == value + 1 {
+                        nextFound = true
+                        break
+                    }
+                }
+            }
+            
+            if !nextFound { return false }
+        }
+        
+        return true
+    }
+    
+    func clearBoard() {
+        board = generatePuzzle()
+        selected = nil
+        showResult = false
+    }
+    
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -575,11 +1284,102 @@ struct NumbrixGameView: View {
                         .padding()
                 }
             }
+            Text("Numbrix")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Fill the grid with numbers 1-25 so consecutive numbers are adjacent.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            VStack(spacing: 2) {
+                ForEach(0..<5, id: \.self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<5, id: \.self) { col in
+                            ZStack {
+                                Rectangle()
+                                    .fill(selected?.row == row && selected?.col == col ? Color.accentColor.opacity(0.2) : Color.white)
+                                    .border(Color.accentColor, width: 1)
+                                Text(board[row][col] != nil ? "\(board[row][col]!)" : "")
+                                    .font(.title3)
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(width: 50, height: 50)
+                            .onTapGesture {
+                                selected = SelectedCell(row: row, col: col)
+                            }
+                        }
+                    }
+                }
+            }
+            .cornerRadius(10)
+            .padding(.vertical, 12)
+            Spacer(minLength: 8)
+            if let sel = selected {
+                HStack(spacing: 8) {
+                    ForEach(1...25, id: \.self) { num in
+                        Button(action: {
+                            if isValidMove(row: sel.row, col: sel.col, value: num) {
+                                board[sel.row][sel.col] = num
+                            }
+                        }) {
+                            Text("\(num)")
+                                .font(.caption.bold())
+                                .frame(width: 28, height: 28)
+                                .background(isValidMove(row: sel.row, col: sel.col, value: num) ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.1))
+                                .foregroundColor(isValidMove(row: sel.row, col: sel.col, value: num) ? .accentColor : .gray)
+                                .cornerRadius(6)
+                        }
+                    }
+                }
+                .padding(.bottom, 8)
+                
+                Button(action: { board[sel.row][sel.col] = nil }) {
+                    Text("Clear")
+                        .font(.body.bold())
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(8)
+                }
+                .padding(.bottom, 8)
+            }
+            HStack(spacing: 16) {
+                Button(action: {
+                    isCorrect = checkSolution()
+                    showResult = true
+                }) {
+                    Text("Check")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(10)
+                }
+                Button(action: clearBoard) {
+                    Text("New Puzzle")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                }
+            }
+            .padding(.top, 8)
+            if showResult {
+                Text(isCorrect ? "Correct!" : "Not solved yet.")
+                    .foregroundColor(isCorrect ? .green : .red)
+                    .font(.headline)
+                    .padding(.top, 4)
+            }
             Spacer()
-            Text("Numbrix Game Coming Soon!")
-                .font(.title)
-                .padding()
-            Spacer()
+        }
+        .padding()
+        .onAppear {
+            clearBoard()
         }
     }
 }
@@ -608,8 +1408,151 @@ struct ThreesGameView: View {
 
 struct BinaryPuzzleGameView: View {
     let onExit: () -> Void
+    @State private var board: [[Int?]] = Array(repeating: Array(repeating: nil, count: 6), count: 6)
+    @State private var selected: SelectedCell? = nil
+    @State private var showResult: Bool = false
+    @State private var isCorrect: Bool = false
+    
+    func generatePuzzle() -> [[Int?]] {
+        // Generate a simple puzzle with some pre-filled numbers
+        let puzzle: [[Int?]] = [
+            [1, 0, nil, nil, 0, 1],
+            [0, 1, nil, nil, 1, 0],
+            [nil, nil, 1, 0, nil, nil],
+            [nil, nil, 0, 1, nil, nil],
+            [1, 0, nil, nil, 0, 1],
+            [0, 1, nil, nil, 1, 0]
+        ]
+        return puzzle
+    }
+    
+    func cycleValue(row: Int, col: Int) {
+        if board[row][col] == nil {
+            board[row][col] = 0
+        } else if board[row][col] == 0 {
+            board[row][col] = 1
+        } else {
+            board[row][col] = nil
+        }
+    }
+    
+    func checkSolution() -> Bool {
+        // Check each row and column
+        for i in 0..<6 {
+            if !checkRow(i) || !checkColumn(i) {
+                return false
+            }
+        }
+        
+        // Check that all rows are unique
+        var rows: [[Int]] = []
+        for row in 0..<6 {
+            var rowValues: [Int] = []
+            for col in 0..<6 {
+                if let val = board[row][col] {
+                    rowValues.append(val)
+                } else {
+                    return false // Incomplete
+                }
+            }
+            rows.append(rowValues)
+        }
+        
+        if Set(rows).count != rows.count {
+            return false
+        }
+        
+        // Check that all columns are unique
+        var columns: [[Int]] = []
+        for col in 0..<6 {
+            var colValues: [Int] = []
+            for row in 0..<6 {
+                if let val = board[row][col] {
+                    colValues.append(val)
+                } else {
+                    return false // Incomplete
+                }
+            }
+            columns.append(colValues)
+        }
+        
+        if Set(columns).count != columns.count {
+            return false
+        }
+        
+        return true
+    }
+    
+    func checkRow(_ row: Int) -> Bool {
+        var zeros = 0
+        var ones = 0
+        var consecutive = 0
+        var lastValue: Int? = nil
+        
+        for col in 0..<6 {
+            if let value = board[row][col] {
+                if value == 0 {
+                    zeros += 1
+                } else {
+                    ones += 1
+                }
+                
+                if value == lastValue {
+                    consecutive += 1
+                    if consecutive > 2 {
+                        return false // More than 2 consecutive
+                    }
+                } else {
+                    consecutive = 1
+                }
+                lastValue = value
+            } else {
+                return false // Incomplete
+            }
+        }
+        
+        return zeros == 3 && ones == 3
+    }
+    
+    func checkColumn(_ col: Int) -> Bool {
+        var zeros = 0
+        var ones = 0
+        var consecutive = 0
+        var lastValue: Int? = nil
+        
+        for row in 0..<6 {
+            if let value = board[row][col] {
+                if value == 0 {
+                    zeros += 1
+                } else {
+                    ones += 1
+                }
+                
+                if value == lastValue {
+                    consecutive += 1
+                    if consecutive > 2 {
+                        return false // More than 2 consecutive
+                    }
+                } else {
+                    consecutive = 1
+                }
+                lastValue = value
+            } else {
+                return false // Incomplete
+            }
+        }
+        
+        return zeros == 3 && ones == 3
+    }
+    
+    func clearBoard() {
+        board = generatePuzzle()
+        selected = nil
+        showResult = false
+    }
+    
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -619,13 +1562,262 @@ struct BinaryPuzzleGameView: View {
                         .padding()
                 }
             }
-            Spacer()
-            Text("Binary Puzzle Game Coming Soon!")
-                .font(.title)
-                .padding()
+            Text("Binary Puzzle")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Fill the grid with 0s and 1s. No more than two of the same number next to each other in any row or column. Each row and column must have an equal number of 0s and 1s, and all rows and columns must be unique.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            VStack(spacing: 2) {
+                ForEach(0..<6, id: \.self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<6, id: \.self) { col in
+                            ZStack {
+                                Rectangle()
+                                    .fill(selected?.row == row && selected?.col == col ? Color.accentColor.opacity(0.2) : Color.white)
+                                    .border(Color.accentColor, width: 1)
+                                Text(board[row][col] != nil ? "\(board[row][col]!)" : "")
+                                    .font(.title2.bold())
+                                    .foregroundColor(board[row][col] == 0 ? .blue : .red)
+                            }
+                            .frame(width: 45, height: 45)
+                            .onTapGesture {
+                                selected = SelectedCell(row: row, col: col)
+                                cycleValue(row: row, col: col)
+                            }
+                        }
+                    }
+                }
+            }
+            .cornerRadius(10)
+            .padding(.vertical, 12)
+            
+            Spacer(minLength: 8)
+            HStack(spacing: 16) {
+                Button(action: {
+                    isCorrect = checkSolution()
+                    showResult = true
+                }) {
+                    Text("Check")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundColor(.accentColor)
+                        .cornerRadius(10)
+                }
+                Button(action: clearBoard) {
+                    Text("New Puzzle")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                }
+            }
+            .padding(.top, 8)
+            if showResult {
+                Text(isCorrect ? "Correct!" : "Not solved yet.")
+                    .foregroundColor(isCorrect ? .green : .red)
+                    .font(.headline)
+                    .padding(.top, 4)
+            }
             Spacer()
         }
+        .padding()
+        .onAppear {
+            clearBoard()
+        }
     }
+}
+
+struct MemoryMatchGameView: View {
+    let onExit: () -> Void
+    @State private var cards: [Card] = []
+    @State private var flippedIndices: [Int] = []
+    @State private var matchedPairs: Int = 0
+    @State private var score: Int = 0
+    @State private var gameOver: Bool = false
+    @State private var timer: Timer?
+    @State private var timeRemaining: Int = 60
+    
+    let gridSize = 4
+    let cardPairs = 8 // Number of pairs
+    
+    struct Card: Identifiable, Hashable {
+        let id = UUID()
+        var value: Int
+        var isFlipped: Bool = false
+        var isMatched: Bool = false
+    }
+    
+    func generateCards() {
+        var values: [Int] = []
+        for i in 0..<cardPairs {
+            values.append(i)
+            values.append(i)
+        }
+        values.shuffle()
+        
+        cards.removeAll()
+        for i in 0..<(gridSize * gridSize) {
+            cards.append(Card(value: values[i]))
+        }
+    }
+    
+    func flipCard(at index: Int) {
+        guard index < cards.count && !cards[index].isMatched && !cards[index].isFlipped else { return }
+        
+        cards[index].isFlipped = true
+        flippedIndices.append(index)
+        
+        if flippedIndices.count == 2 {
+            let firstIndex = flippedIndices[0]
+            let secondIndex = flippedIndices[1]
+            
+            if cards[firstIndex].value == cards[secondIndex].value {
+                // Match found
+                cards[firstIndex].isMatched = true
+                cards[secondIndex].isMatched = true
+                matchedPairs += 1
+                score += 10
+            } else {
+                // No match - flip cards back after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    cards[firstIndex].isFlipped = false
+                    cards[secondIndex].isFlipped = false
+                }
+                score -= 5
+            }
+            flippedIndices.removeAll()
+        }
+    }
+    
+    func startGame() {
+        matchedPairs = 0
+        score = 0
+        timeRemaining = 60
+        gameOver = false
+        flippedIndices.removeAll()
+        generateCards()
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            timeRemaining -= 1
+            if timeRemaining == 0 {
+                gameOver = true
+                timer?.invalidate()
+            }
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                Button(action: onExit) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                        .padding()
+                }
+            }
+            Text("Memory Match")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            Text("Find matching pairs of cards to earn points!")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            
+            Text("Time: \(timeRemaining)")
+                .font(.title2)
+                .foregroundColor(.primary)
+                .padding(.bottom, 8)
+            
+            Text("Score: \(score)")
+                .font(.title2)
+                .foregroundColor(.primary)
+                .padding(.bottom, 8)
+            
+            if gameOver {
+                Text("Game Over!")
+                    .font(.title2.bold())
+                    .foregroundColor(.red)
+                    .padding(.top, 12)
+                Button(action: startGame) {
+                    Text("Play Again")
+                        .font(.body.bold())
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .padding(.top, 8)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 10) {
+                    ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                        CardView(card: card, onFlip: {
+                            flipCard(at: index)
+                        })
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding()
+        .onAppear {
+            startGame()
+        }
+    }
+}
+
+struct CardView: View {
+    let card: MemoryMatchGameView.Card
+    let onFlip: () -> Void
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(card.isFlipped || card.isMatched ? Color.accentColor : Color.gray.opacity(0.2))
+                .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 3)
+            
+            if card.isFlipped || card.isMatched {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white)
+                    .overlay(
+                        Text("\(card.value)")
+                            .font(.title2)
+                            .foregroundColor(.black)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white)
+                    .overlay(
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    )
+            }
+        }
+        .frame(width: 70, height: 90)
+        .onTapGesture {
+            onFlip()
+        }
+    }
+}
+
+struct SelectedCell {
+    let row: Int
+    let col: Int
+}
+
+struct CellCoordinate: Hashable {
+    let row: Int
+    let col: Int
 }
 
 enum SheetContent: Identifiable {
@@ -659,26 +1851,14 @@ struct ContentView: View {
         Game(
             name: "Kakuro",
             icon: "plus.slash.minus",
-            rules: "Think 'crossword meets Sudoku.' Fill the grid so that the sums match the clues. Each number in a run must be unique.",
+            rules: "• Fill white cells with digits 1-9\n• Each group of consecutive cells must add up to the clue number\n• No digit can be repeated within the same group\n• Clues show the sum for the group starting from that cell\n• Start with small sums (3-7) - they have fewer combinations\n• Use the 'Check' button to verify your solution",
             view: AnyView(KakuroGameView(onExit: {}))
         ),
         Game(
             name: "KenKen",
             icon: "function",
-            rules: "Like Sudoku but with math operations (add, subtract, multiply, divide) inside grid cages. Fill the grid so no number repeats in any row or column, and each cage's numbers combine to the target using the specified operation.",
+            rules: "• Fill each row and column with numbers 1-4 (no repeats)\n• Each cage (group of cells) has a target number and math operation\n• The numbers in a cage must combine using the operation to equal the target\n• Operations: + (add), × (multiply), − (subtract), ÷ (divide)\n• For subtraction/division, the larger number goes first\n• Use the 'Check' button to verify your solution",
             view: AnyView(KenKenGameView(onExit: {}))
-        ),
-        Game(
-            name: "Nonograms",
-            icon: "paintbrush.pointed.fill",
-            rules: "Number clues guide which squares to fill to reveal a hidden picture. Each number tells you how many consecutive filled squares are in that row or column.",
-            view: AnyView(NonogramsGameView(onExit: {}))
-        ),
-        Game(
-            name: "Hitori",
-            icon: "circle.lefthalf.filled",
-            rules: "Remove repeating numbers in rows/columns by shading them. No two shaded cells can touch horizontally or vertically, and all unshaded cells must form a single group.",
-            view: AnyView(HitoriGameView(onExit: {}))
         ),
         Game(
             name: "Calcudoku",
@@ -701,7 +1881,7 @@ struct ContentView: View {
         Game(
             name: "Numbrix",
             icon: "number.circle.fill",
-            rules: "Fill in missing numbers in a grid from 1 to n so that they connect in order, horizontally or vertically.",
+            rules: "• Fill the grid with numbers 1-25\n• Consecutive numbers must be adjacent (horizontally or vertically)\n• Create a continuous path from 1 to 25\n• Numbers cannot be repeated\n• Use the number pad to enter values\n• Valid moves are highlighted in the keypad",
             view: AnyView(NumbrixGameView(onExit: {}))
         ),
         Game(
@@ -713,8 +1893,14 @@ struct ContentView: View {
         Game(
             name: "Binary Puzzle",
             icon: "circle.grid.2x2.fill",
-            rules: "Fill the grid with 0s and 1s. No more than two of the same number next to each other in any row or column. Each row and column must have an equal number of 0s and 1s, and all rows and columns must be unique.",
+            rules: "• Fill the grid with 0s and 1s\n• No more than 2 consecutive same numbers in any row or column\n• Each row and column must have exactly 3 zeros and 3 ones\n• All rows must be unique (no duplicate rows)\n• All columns must be unique (no duplicate columns)\n• Tap cells to cycle: empty → 0 → 1 → empty",
             view: AnyView(BinaryPuzzleGameView(onExit: {}))
+        ),
+        Game(
+            name: "Memory Match",
+            icon: "brain.head.profile",
+            rules: "• Find matching pairs of cards\n• Tap cards to reveal them\n• Remember card positions\n• Match all pairs to win\n• Try to complete in fewest moves\n• Cards flip back if no match",
+            view: AnyView(MemoryMatchGameView(onExit: {}))
         ),
     ]
     
@@ -726,7 +1912,7 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                LinearGradient(gradient: Gradient(colors: [Color(UIColor.systemGray6), Color(UIColor.systemGray4)]), startPoint: .top, endPoint: .bottom)
+                LinearGradient(gradient: Gradient(colors: [Color.gray.opacity(0.1), Color.gray.opacity(0.2)]), startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -777,7 +1963,6 @@ struct ContentView: View {
                 }
                 .padding(.top, 24)
             }
-            .navigationBarHidden(true)
             .sheet(item: $sheetContent) { content in
                 switch content {
                 case .rules(let game):
@@ -794,10 +1979,6 @@ struct ContentView: View {
                         KakuroGameView(onExit: { sheetContent = nil })
                     case "KenKen":
                         KenKenGameView(onExit: { sheetContent = nil })
-                    case "Nonograms":
-                        NonogramsGameView(onExit: { sheetContent = nil })
-                    case "Hitori":
-                        HitoriGameView(onExit: { sheetContent = nil })
                     case "Calcudoku":
                         CalcudokuGameView(onExit: { sheetContent = nil })
                     case "Nurikabe":
@@ -810,6 +1991,8 @@ struct ContentView: View {
                         ThreesGameView(onExit: { sheetContent = nil })
                     case "Binary Puzzle":
                         BinaryPuzzleGameView(onExit: { sheetContent = nil })
+                    case "Memory Match":
+                        MemoryMatchGameView(onExit: { sheetContent = nil })
                     default:
                         Text("Game Coming Soon!")
                     }
@@ -857,3 +2040,4 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
+
