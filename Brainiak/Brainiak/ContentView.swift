@@ -104,6 +104,32 @@ struct SudokuGameView: View {
         selectedCol = nil
     }
     
+    func isBoardComplete() -> Bool {
+        for row in 0..<9 {
+            for col in 0..<9 {
+                if board[row][col] == nil {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+    
+    func calculateDifficulty() -> String {
+        var emptyCells = 0
+        for row in 0..<9 {
+            for col in 0..<9 {
+                if initialBoard[row][col] == nil {
+                    emptyCells += 1
+                }
+            }
+        }
+        
+        if emptyCells >= 50 { return "Hard" }
+        if emptyCells >= 40 { return "Medium" }
+        return "Easy"
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -158,6 +184,16 @@ struct SudokuGameView: View {
                             if isValidMove(row: row, col: col, value: num) {
                                 board[row][col] = num
                                 showInvalidMove = false
+                                
+                                // Check if puzzle is complete
+                                if isBoardComplete() {
+                                    let finalScore = GameScore(
+                                        game: "Sudoku",
+                                        score: 1000 - (calculateDifficulty() == "Hard" ? 0 : (calculateDifficulty() == "Medium" ? 200 : 400)),
+                                        difficulty: calculateDifficulty()
+                                    )
+                                    ScoreManager.shared.addScore(finalScore)
+                                }
                             } else {
                                 showInvalidMove = true
                             }
@@ -298,6 +334,14 @@ struct Game2048View: View {
             addRandomTile()
             if !canMove() {
                 gameOver = true
+                
+                // Save the score
+                let finalScore = GameScore(
+                    game: "2048",
+                    score: score,
+                    difficulty: score >= 2048 ? "Hard" : (score >= 1024 ? "Medium" : "Easy")
+                )
+                ScoreManager.shared.addScore(finalScore)
             }
         }
     }
@@ -1060,10 +1104,180 @@ struct CalcudokuGameView: View {
     }
 }
 
-struct NurikabeGameView: View {
+struct ColorMatchGameView: View {
     let onExit: () -> Void
+    @State private var board: [[Int]] = []
+    @State private var score: Int = 0
+    @State private var moves: Int = 0
+    @State private var gameOver: Bool = false
+    @State private var selectedTile: TileCoordinate? = nil
+    
+    struct TileCoordinate: Hashable {
+        let row: Int
+        let col: Int
+    }
+    @State private var showWinMessage: Bool = false
+    
+    let gridSize = 6
+    let colors = [1, 2, 3, 4, 5, 6] // Different colors represented by numbers
+    
+    func generateBoard() {
+        board = Array(repeating: Array(repeating: 0, count: gridSize), count: gridSize)
+        for row in 0..<gridSize {
+            for col in 0..<gridSize {
+                board[row][col] = colors.randomElement() ?? 1
+            }
+        }
+    }
+    
+    func getColor(_ value: Int) -> Color {
+        switch value {
+        case 1: return .red
+        case 2: return .blue
+        case 3: return .green
+        case 4: return .yellow
+        case 5: return .purple
+        case 6: return .orange
+        default: return .gray
+        }
+    }
+    
+    func selectTile(row: Int, col: Int) {
+        if selectedTile == nil {
+            selectedTile = TileCoordinate(row: row, col: col)
+        } else {
+            let firstTile = selectedTile!
+            let secondTile = TileCoordinate(row: row, col: col)
+            
+            // Check if tiles are adjacent
+            let rowDiff = abs(firstTile.row - secondTile.row)
+            let colDiff = abs(firstTile.col - secondTile.col)
+            
+            if (rowDiff == 1 && colDiff == 0) || (rowDiff == 0 && colDiff == 1) {
+                // Swap tiles
+                let temp = board[firstTile.row][firstTile.col]
+                board[firstTile.row][firstTile.col] = board[secondTile.row][secondTile.col]
+                board[secondTile.row][secondTile.col] = temp
+                
+                moves += 1
+                
+                // Check for matches
+                let matches = checkMatches()
+                if matches > 0 {
+                    score += matches * 10
+                    removeMatches()
+                    fillBoard()
+                }
+                
+                // Check if board is solved (all same color)
+                if isBoardSolved() {
+                    gameOver = true
+                    showWinMessage = true
+                    
+                    // Save the score
+                    let finalScore = GameScore(
+                        game: "Color Match",
+                        score: score,
+                        difficulty: moves <= 20 ? "Easy" : (moves <= 40 ? "Medium" : "Hard")
+                    )
+                    ScoreManager.shared.addScore(finalScore)
+                }
+            }
+            
+            selectedTile = nil
+        }
+    }
+    
+    func checkMatches() -> Int {
+        var matchCount = 0
+        
+        // Check rows
+        for row in 0..<gridSize {
+            for col in 0..<(gridSize-2) {
+                if board[row][col] == board[row][col+1] && board[row][col] == board[row][col+2] {
+                    matchCount += 1
+                }
+            }
+        }
+        
+        // Check columns
+        for row in 0..<(gridSize-2) {
+            for col in 0..<gridSize {
+                if board[row][col] == board[row+1][col] && board[row][col] == board[row+2][col] {
+                    matchCount += 1
+                }
+            }
+        }
+        
+        return matchCount
+    }
+    
+    func removeMatches() {
+        // Mark matched tiles for removal
+        var toRemove: Set<TileCoordinate> = []
+        
+        // Check rows
+        for row in 0..<gridSize {
+            for col in 0..<(gridSize-2) {
+                if board[row][col] == board[row][col+1] && board[row][col] == board[row][col+2] {
+                    toRemove.insert(TileCoordinate(row: row, col: col))
+                    toRemove.insert(TileCoordinate(row: row, col: col+1))
+                    toRemove.insert(TileCoordinate(row: row, col: col+2))
+                }
+            }
+        }
+        
+        // Check columns
+        for row in 0..<(gridSize-2) {
+            for col in 0..<gridSize {
+                if board[row][col] == board[row+1][col] && board[row][col] == board[row+2][col] {
+                    toRemove.insert(TileCoordinate(row: row, col: col))
+                    toRemove.insert(TileCoordinate(row: row+1, col: col))
+                    toRemove.insert(TileCoordinate(row: row+2, col: col))
+                }
+            }
+        }
+        
+        // Remove matched tiles
+        for tile in toRemove {
+            board[tile.row][tile.col] = 0
+        }
+    }
+    
+    func fillBoard() {
+        // Fill empty spaces with new colors
+        for row in 0..<gridSize {
+            for col in 0..<gridSize {
+                if board[row][col] == 0 {
+                    board[row][col] = colors.randomElement() ?? 1
+                }
+            }
+        }
+    }
+    
+    func isBoardSolved() -> Bool {
+        let firstColor = board[0][0]
+        for row in 0..<gridSize {
+            for col in 0..<gridSize {
+                if board[row][col] != firstColor {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+    
+    func resetGame() {
+        score = 0
+        moves = 0
+        gameOver = false
+        showWinMessage = false
+        selectedTile = nil
+        generateBoard()
+    }
+    
     var body: some View {
-        VStack {
+        VStack(spacing: 20) {
             HStack {
                 Spacer()
                 Button(action: onExit) {
@@ -1073,11 +1287,96 @@ struct NurikabeGameView: View {
                         .padding()
                 }
             }
-            Spacer()
-            Text("Nurikabe Game Coming Soon!")
-                .font(.title)
+            
+            Text("Color Match")
+                .font(.largeTitle.bold())
+                .padding(.bottom, 8)
+            
+            Text("Match 3 or more same colors to clear them!")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+            
+            HStack(spacing: 30) {
+                VStack {
+                    Text("Score")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(score)")
+                        .font(.title2.bold())
+                }
+                
+                VStack {
+                    Text("Moves")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(moves)")
+                        .font(.title2.bold())
+                }
+            }
+            .padding(.bottom, 20)
+            
+            if gameOver {
+                VStack(spacing: 16) {
+                    if showWinMessage {
+                        Text("🎉 Congratulations! 🎉")
+                            .font(.title2.bold())
+                            .foregroundColor(.green)
+                        Text("You solved the puzzle!")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Final Score: \(score)")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    } else {
+                        Text("Game Over!")
+                            .font(.title2.bold())
+                            .foregroundColor(.red)
+                    }
+                    
+                    Button(action: resetGame) {
+                        Text("Play Again")
+                            .font(.body.bold())
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                }
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(0..<gridSize, id: \.self) { row in
+                        HStack(spacing: 8) {
+                            ForEach(0..<gridSize, id: \.self) { col in
+                                                let isSelected = selectedTile?.row == row && selectedTile?.col == col
+                let isAdjacent = selectedTile != nil && 
+                    ((abs(selectedTile!.row - row) == 1 && selectedTile!.col == col) ||
+                     (abs(selectedTile!.col - col) == 1 && selectedTile!.row == row))
+                                
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(getColor(board[row][col]))
+                                    .frame(width: 50, height: 50)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(isSelected ? Color.white : (isAdjacent ? Color.yellow : Color.clear), lineWidth: 3)
+                                    )
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                                    .onTapGesture {
+                                        selectTile(row: row, col: col)
+                                    }
+                            }
+                        }
+                    }
+                }
                 .padding()
-            Spacer()
+            }
+        }
+        .padding()
+        .onAppear {
+            if board.isEmpty {
+                generateBoard()
+            }
         }
     }
 }
@@ -1684,6 +1983,20 @@ struct MemoryMatchGameView: View {
                 cards[secondIndex].isMatched = true
                 matchedPairs += 1
                 score += 10
+                
+                // Check if all pairs have been matched
+                if matchedPairs == cardPairs {
+                    gameOver = true
+                    timer?.invalidate()
+                    
+                    // Save the score
+                    let finalScore = GameScore(
+                        game: "Memory Match",
+                        score: score,
+                        difficulty: timeRemaining > 30 ? "Easy" : (timeRemaining > 15 ? "Medium" : "Hard")
+                    )
+                    ScoreManager.shared.addScore(finalScore)
+                }
             } else {
                 // No match - flip cards back after delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -1743,20 +2056,40 @@ struct MemoryMatchGameView: View {
                 .padding(.bottom, 8)
             
             if gameOver {
-                Text("Game Over!")
-                    .font(.title2.bold())
-                    .foregroundColor(.red)
-                    .padding(.top, 12)
-                Button(action: startGame) {
-                    Text("Play Again")
-                        .font(.body.bold())
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                VStack(spacing: 12) {
+                    if matchedPairs == cardPairs {
+                        Text("Congratulations!")
+                            .font(.title2.bold())
+                            .foregroundColor(.green)
+                        Text("You matched all the cards!")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Final Score: \(score)")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    } else {
+                        Text("Game Over!")
+                            .font(.title2.bold())
+                            .foregroundColor(.red)
+                        Text("Time's up!")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Final Score: \(score)")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Button(action: startGame) {
+                        Text("Play Again")
+                            .font(.body.bold())
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
             } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 10) {
                     ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
@@ -1835,6 +2168,183 @@ enum SheetContent: Identifiable {
 }
 
 struct ContentView: View {
+    @State private var currentView: AppView = .home
+    @State private var sheetContent: SheetContent? = nil
+    
+    enum AppView {
+        case home, games, scores, settings
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                LinearGradient(gradient: Gradient(colors: [Color.gray.opacity(0.1), Color.gray.opacity(0.2)]), startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+                
+                switch currentView {
+                case .home:
+                    HomeView(onNavigate: { view in
+                        currentView = view
+                    })
+                case .games:
+                    GamesView(sheetContent: $sheetContent, onBack: {
+                        currentView = .home
+                    })
+                case .scores:
+                    ScoresView(onBack: {
+                        currentView = .home
+                    })
+                case .settings:
+                    SettingsView(onBack: {
+                        currentView = .home
+                    })
+                }
+            }
+        }
+        .sheet(item: $sheetContent) { content in
+            switch content {
+            case .rules(let game):
+                RulesView(game: game, onStart: {
+                    sheetContent = .game(game)
+                })
+            case .game(let game):
+                switch game.name {
+                case "Sudoku":
+                    SudokuGameView(onExit: { sheetContent = nil })
+                case "2048":
+                    Game2048View(onExit: { sheetContent = nil })
+                case "Kakuro":
+                    KakuroGameView(onExit: { sheetContent = nil })
+                case "KenKen":
+                    KenKenGameView(onExit: { sheetContent = nil })
+                case "Calcudoku":
+                    CalcudokuGameView(onExit: { sheetContent = nil })
+                case "Color Match":
+                    ColorMatchGameView(onExit: { sheetContent = nil })
+                case "Futoshiki":
+                    FutoshikiGameView(onExit: { sheetContent = nil })
+                case "Numbrix":
+                    NumbrixGameView(onExit: { sheetContent = nil })
+                case "Threes":
+                    ThreesGameView(onExit: { sheetContent = nil })
+                case "Binary Puzzle":
+                    BinaryPuzzleGameView(onExit: { sheetContent = nil })
+                case "Memory Match":
+                    MemoryMatchGameView(onExit: { sheetContent = nil })
+                default:
+                    Text("Game Coming Soon!")
+                }
+            }
+        }
+    }
+}
+
+struct HomeView: View {
+    let onNavigate: (ContentView.AppView) -> Void
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            // App Title and Headline
+            VStack(spacing: 16) {
+                Text("Brainiak")
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .foregroundColor(.accentColor)
+                
+                Text("Train your brain with logic and number games")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+            
+            Spacer()
+            
+            // Navigation Buttons
+            VStack(spacing: 20) {
+                NavigationButton(
+                    title: "Game Modes",
+                    subtitle: "Choose from 12 brain-training games",
+                    icon: "gamecontroller.fill",
+                    color: .blue
+                ) {
+                    onNavigate(.games)
+                }
+                
+                NavigationButton(
+                    title: "Scores",
+                    subtitle: "View your achievements and high scores",
+                    icon: "trophy.fill",
+                    color: .orange
+                ) {
+                    onNavigate(.scores)
+                }
+                
+                NavigationButton(
+                    title: "Settings",
+                    subtitle: "Customize your gaming experience",
+                    icon: "gearshape.fill",
+                    color: .purple
+                ) {
+                    onNavigate(.settings)
+                }
+            }
+            .padding(.horizontal, 30)
+            
+            Spacer()
+        }
+        .padding()
+    }
+}
+
+struct NavigationButton: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .frame(width: 50, height: 50)
+                    .background(color)
+                    .clipShape(Circle())
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title3.bold())
+                        .foregroundColor(.primary)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct GamesView: View {
+    @Binding var sheetContent: SheetContent?
+    let onBack: () -> Void
+    
     let games: [Game] = [
         Game(
             name: "Sudoku",
@@ -1867,10 +2377,10 @@ struct ContentView: View {
             view: AnyView(CalcudokuGameView(onExit: {}))
         ),
         Game(
-            name: "Nurikabe",
-            icon: "square.split.2x2.fill",
-            rules: "Fill squares to form islands with unique rules: each island contains one number, the number tells how many squares in the island, islands can't touch, and all water forms a single connected group.",
-            view: AnyView(NurikabeGameView(onExit: {}))
+            name: "Color Match",
+            icon: "paintpalette.fill",
+            rules: "• Swap adjacent colored tiles to create matches of 3 or more\n• Match tiles horizontally or vertically to clear them\n• New tiles will fill empty spaces\n• Try to make the entire board the same color\n• Plan your moves carefully to create chain reactions\n• Score points for each match you create",
+            view: AnyView(ColorMatchGameView(onExit: {}))
         ),
         Game(
             name: "Futoshiki",
@@ -1904,100 +2414,517 @@ struct ContentView: View {
         ),
     ]
     
-    @State private var sheetContent: SheetContent? = nil
     let columns = [
         GridItem(.flexible()),
         GridItem(.flexible())
     ]
+    
     var body: some View {
-        NavigationView {
-            ZStack {
-                LinearGradient(gradient: Gradient(colors: [Color.gray.opacity(0.1), Color.gray.opacity(0.2)]), startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Brainiak")
-                                .font(.system(size: 38, weight: .bold, design: .rounded))
-                                .foregroundColor(.accentColor)
-                            Text("Train your brain with logic and number games")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
+        VStack(spacing: 16) {
+            // Header with back button
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.left")
+                            .font(.title2)
+                        Text("Back")
+                            .font(.title3)
                     }
-                    .padding(.horizontal)
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(games) { game in
-                                Button(action: {
-                                    sheetContent = .rules(game)
-                                }) {
-                                    VStack(spacing: 12) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                .fill(Color.accentColor.opacity(0.12))
-                                                .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 3)
-                                            VStack(spacing: 8) {
-                                                Image(systemName: game.icon)
-                                                    .font(.system(size: 40, weight: .bold))
-                                                    .foregroundColor(.accentColor)
-                                                Text(game.name)
-                                                    .font(.title3.bold())
-                                                    .foregroundColor(.primary)
-                                                    .multilineTextAlignment(.center)
-                                            }
-                                            .padding(.vertical, 24)
-                                            .padding(.horizontal, 8)
-                                        }
+                    .foregroundColor(.accentColor)
+                }
+                
+                Spacer()
+                
+                Text("Game Modes")
+                    .font(.title.bold())
+                
+                Spacer()
+                
+                // Invisible element for balance
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.title2)
+                        .opacity(0)
+                    Text("Back")
+                        .font(.title3)
+                        .opacity(0)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 20) {
+                    ForEach(games) { game in
+                        Button(action: {
+                            sheetContent = .rules(game)
+                        }) {
+                            VStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(Color.accentColor.opacity(0.12))
+                                        .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 3)
+                                    VStack(spacing: 8) {
+                                        Image(systemName: game.icon)
+                                            .font(.system(size: 40, weight: .bold))
+                                            .foregroundColor(.accentColor)
+                                        Text(game.name)
+                                            .font(.title3.bold())
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.center)
                                     }
-                                    .frame(height: 140)
+                                    .padding(.vertical, 24)
+                                    .padding(.horizontal, 8)
                                 }
-                                .buttonStyle(PlainButtonStyle())
-                                .padding(.horizontal, 4)
+                            }
+                            .frame(height: 140)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal, 4)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+        }
+    }
+}
+
+struct ScoresView: View {
+    let onBack: () -> Void
+    @State private var selectedGame: String? = nil
+    @State private var showAllScores = true
+    @StateObject private var scoreManager = ScoreManager.shared
+    
+    let gameIcons: [String: String] = [
+        "Sudoku": "square.grid.3x3.fill",
+        "2048": "number.square.fill",
+        "Color Match": "paintpalette.fill",
+        "Memory Match": "brain.head.profile",
+        "Threes": "3.circle.fill",
+        "Kakuro": "plus.slash.minus",
+        "KenKen": "function",
+        "Calcudoku": "divide.square.fill",
+        "Futoshiki": "chevron.left.slash.chevron.right",
+        "Numbrix": "number.circle.fill",
+        "Binary Puzzle": "circle.grid.2x2.fill"
+    ]
+    
+    var allScores: [GameScore] {
+        scoreManager.getScores().sorted { $0.score > $1.score }
+    }
+    
+    var gamesWithScores: [String] {
+        Array(Set(scoreManager.getScores().map { $0.game })).sorted()
+    }
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header with back button
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.left")
+                            .font(.title2)
+                        Text("Back")
+                            .font(.title3)
+                    }
+                    .foregroundColor(.accentColor)
+                }
+                
+                Spacer()
+                
+                Text("Scores")
+                    .font(.title.bold())
+                
+                Spacer()
+                
+                // Invisible element for balance
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.title2)
+                        .opacity(0)
+                    Text("Back")
+                        .font(.title3)
+                        .opacity(0)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            // Toggle between All Scores and Game-specific scores
+            HStack(spacing: 0) {
+                Button(action: {
+                    showAllScores = true
+                    selectedGame = nil
+                }) {
+                    Text("All Scores")
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(showAllScores ? Color.accentColor : Color.gray.opacity(0.2))
+                        .foregroundColor(showAllScores ? .white : .primary)
+                        .cornerRadius(8)
+                }
+                
+                Button(action: {
+                    showAllScores = false
+                }) {
+                    Text("By Game")
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(!showAllScores ? Color.accentColor : Color.gray.opacity(0.2))
+                        .foregroundColor(!showAllScores ? .white : .primary)
+                        .cornerRadius(8)
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    scoreManager.clearScores()
+                }) {
+                    Text("Clear")
+                        .font(.caption)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.2))
+                        .foregroundColor(.red)
+                        .cornerRadius(6)
+                }
+            }
+            .padding(.horizontal)
+            
+            if showAllScores {
+                // All Scores View
+                if allScores.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.yellow)
+                        
+                        Text("No Scores Yet!")
+                            .font(.title2.bold())
+                            .foregroundColor(.primary)
+                        
+                        Text("Play some games to see your scores here.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(allScores.prefix(20), id: \.id) { score in
+                                ScoreRowView(score: score, showGame: true)
                             }
                         }
                         .padding(.horizontal)
-                        .padding(.top, 8)
                     }
                 }
-                .padding(.top, 24)
-            }
-            .sheet(item: $sheetContent) { content in
-                switch content {
-                case .rules(let game):
-                    RulesView(game: game, onStart: {
-                        sheetContent = .game(game)
-                    })
-                case .game(let game):
-                    switch game.name {
-                    case "Sudoku":
-                        SudokuGameView(onExit: { sheetContent = nil })
-                    case "2048":
-                        Game2048View(onExit: { sheetContent = nil })
-                    case "Kakuro":
-                        KakuroGameView(onExit: { sheetContent = nil })
-                    case "KenKen":
-                        KenKenGameView(onExit: { sheetContent = nil })
-                    case "Calcudoku":
-                        CalcudokuGameView(onExit: { sheetContent = nil })
-                    case "Nurikabe":
-                        NurikabeGameView(onExit: { sheetContent = nil })
-                    case "Futoshiki":
-                        FutoshikiGameView(onExit: { sheetContent = nil })
-                    case "Numbrix":
-                        NumbrixGameView(onExit: { sheetContent = nil })
-                    case "Threes":
-                        ThreesGameView(onExit: { sheetContent = nil })
-                    case "Binary Puzzle":
-                        BinaryPuzzleGameView(onExit: { sheetContent = nil })
-                    case "Memory Match":
-                        MemoryMatchGameView(onExit: { sheetContent = nil })
-                    default:
-                        Text("Game Coming Soon!")
+            } else {
+                // Game-specific scores
+                if gamesWithScores.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.yellow)
+                        
+                        Text("No Scores Yet!")
+                            .font(.title2.bold())
+                            .foregroundColor(.primary)
+                        
+                        Text("Play some games to see your scores here.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            ForEach(gamesWithScores, id: \.self) { gameName in
+                                GameScoreSection(
+                                    gameName: gameName,
+                                    scores: scoreManager.getScores(for: gameName),
+                                    icon: gameIcons[gameName] ?? "gamecontroller.fill",
+                                    isExpanded: selectedGame == gameName,
+                                    onToggle: {
+                                        selectedGame = selectedGame == gameName ? nil : gameName
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal)
                     }
                 }
             }
+        }
+    }
+}
+
+struct GameScore: Identifiable, Codable {
+    let id = UUID()
+    let game: String
+    let score: Int
+    let date: Date
+    let difficulty: String
+    
+    init(game: String, score: Int, date: Date = Date(), difficulty: String) {
+        self.game = game
+        self.score = score
+        self.date = date
+        self.difficulty = difficulty
+    }
+}
+
+class ScoreManager: ObservableObject {
+    static let shared = ScoreManager()
+    
+    @Published var scores: [GameScore] = []
+    
+    private let userDefaults = UserDefaults.standard
+    private let scoresKey = "BrainiakGameScores"
+    
+    init() {
+        loadScores()
+    }
+    
+    func addScore(_ score: GameScore) {
+        scores.append(score)
+        scores.sort { $0.score > $1.score }
+        saveScores()
+    }
+    
+    func getScores(for game: String? = nil) -> [GameScore] {
+        if let game = game {
+            return scores.filter { $0.game == game }
+        }
+        return scores
+    }
+    
+    func getHighScore(for game: String) -> GameScore? {
+        return scores.filter { $0.game == game }.max { $0.score < $1.score }
+    }
+    
+    private func saveScores() {
+        if let encoded = try? JSONEncoder().encode(scores) {
+            userDefaults.set(encoded, forKey: scoresKey)
+        }
+    }
+    
+    private func loadScores() {
+        if let data = userDefaults.data(forKey: scoresKey),
+           let decoded = try? JSONDecoder().decode([GameScore].self, from: data) {
+            scores = decoded
+        }
+    }
+    
+    func clearScores() {
+        scores.removeAll()
+        userDefaults.removeObject(forKey: scoresKey)
+    }
+}
+
+struct ScoreRowView: View {
+    let score: GameScore
+    let showGame: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Score rank/medal
+            ZStack {
+                Circle()
+                    .fill(scoreColor)
+                    .frame(width: 40, height: 40)
+                
+                if score.score >= 1000 {
+                    Image(systemName: "crown.fill")
+                        .foregroundColor(.white)
+                        .font(.title3)
+                } else if score.score >= 500 {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.white)
+                        .font(.title3)
+                } else {
+                    Text("\(score.score)")
+                        .font(.caption.bold())
+                        .foregroundColor(.white)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    if showGame {
+                        Text(score.game)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("\(score.score)")
+                        .font(.title2.bold())
+                        .foregroundColor(.accentColor)
+                }
+                
+                HStack {
+                    Text(score.difficulty)
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(difficultyColor.opacity(0.2))
+                        .foregroundColor(difficultyColor)
+                        .cornerRadius(4)
+                    
+                    Spacer()
+                    
+                    Text(score.date, style: .relative)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+    
+    var scoreColor: Color {
+        if score.score >= 1000 { return .orange }
+        if score.score >= 500 { return .blue }
+        return .green
+    }
+    
+    var difficultyColor: Color {
+        switch score.difficulty {
+        case "Hard": return .red
+        case "Medium": return .orange
+        case "Easy": return .green
+        default: return .gray
+        }
+    }
+}
+
+struct GameScoreSection: View {
+    let gameName: String
+    let scores: [GameScore]
+    let icon: String
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onToggle) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(.accentColor)
+                        .frame(width: 30)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(gameName)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Text("\(scores.count) scores")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    if let bestScore = scores.max(by: { $0.score < $1.score }) {
+                        Text("\(bestScore.score)")
+                            .font(.title3.bold())
+                            .foregroundColor(.accentColor)
+                    }
+                    
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(scores.sorted { $0.score > $1.score }, id: \.id) { score in
+                        ScoreRowView(score: score, showGame: false)
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+}
+
+struct SettingsView: View {
+    let onBack: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header with back button
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.left")
+                            .font(.title2)
+                        Text("Back")
+                            .font(.title3)
+                    }
+                    .foregroundColor(.accentColor)
+                }
+                
+                Spacer()
+                
+                Text("Settings")
+                    .font(.title.bold())
+                
+                Spacer()
+                
+                // Invisible element for balance
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.title2)
+                        .opacity(0)
+                    Text("Back")
+                        .font(.title3)
+                        .opacity(0)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.gray)
+                
+                Text("Coming Soon!")
+                    .font(.title2.bold())
+                    .foregroundColor(.primary)
+                
+                Text("Settings and customization options will be available in a future update.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+            
+            Spacer()
         }
     }
 }
